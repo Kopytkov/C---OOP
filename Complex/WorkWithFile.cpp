@@ -51,8 +51,15 @@ struct BMPImage
     // Конструктор для создания черного изображения
     BMPImage(uint32_t w, uint32_t h) {
         bmp.bf.Signature = 0x4D42;  // "BM" в ASCII
-        uint32_t w1 = 3 * w + (4 - (w*3)%4);
-        bmp.bf.FileSize = sizeof(BMP) + w1 * h;
+        if (w % 4 != 0){
+            uint32_t w1 = 3 * w + (4 - (w*3)%4);
+            bmp.bf.FileSize = sizeof(BMP) + w1 * h;
+            bmp.ih.ImageSize = w1 * h;
+        }
+        else {
+            bmp.bf.FileSize = sizeof(BMP) + 3 * w * h;
+            bmp.ih.ImageSize = w * h * 3;
+        };
         bmp.bf.Reserved = 0;
         bmp.bf.DataOffset = sizeof(BMP);
 
@@ -62,7 +69,6 @@ struct BMPImage
         bmp.ih.Planes = 1;
         bmp.ih.BitCount = 24;
         bmp.ih.Compression = 0;
-        bmp.ih.ImageSize = w1 * h;
         bmp.ih.XpixelsPerM = 0;
         bmp.ih.YpixelsPerM = 0;
         bmp.ih.ColorsUsed = 0;
@@ -121,6 +127,54 @@ uint32_t M(const Complex c){
     return n;
 }
 
+RGB GetPaletteColor(uint32_t n) {
+
+    // Определение основных цветов для палитры
+    // const std::vector<std::pair<int, RGB>> palette = {
+    //     {0,   {0, 0, 0}},      // Черный
+    //     {120, {255, 255, 0}},  // Желтый
+    //     {160, {255, 0, 0}},    // Красный
+    //     {255, {0, 0, 255}}     // Синий
+    // };
+    // const std::vector<std::pair<int, RGB>> palette = {
+    //     {0,    {0, 0, 0}},      // Черный
+    //     {36,   {75, 0, 130}},   // Индиго
+    //     {72,   {0, 0, 255}},    // Синий
+    //     {108,  {0, 255, 0}},    // Зеленый
+    //     {144,  {255, 255, 0}},  // Желтый
+    //     {180,  {255, 165, 0}},  // Оранжевый
+    //     {216,  {255, 0, 0}},    // Красный
+    //     {255,  {139, 0, 255}}   // Фиолетовый
+    // };
+    const std::vector<std::pair<int, RGB>> palette = {
+        {0,    {0, 0, 0}},      // Черный
+        {30,   {0, 0, 128}},    // Темно-синий
+        {80,   {0, 0, 255}},    // Ярко-синий
+        {150,  {255, 255, 255}},// Белый
+        {200,  {255, 165, 0}},  // Оранжевый
+        {230,  {255, 255, 0}},  // Желтый
+        {255,  {0, 0, 0}}       // Черный
+    };
+
+    // Найдем, между какими отметками находится `n`
+    for (size_t i = 0; i < palette.size() - 1; ++i) {
+        if (n >= palette[i].first && n <= palette[i + 1].first) {
+            // Определение весов для линейной интерполяции
+            float t = float(n - palette[i].first) / (palette[i + 1].first - palette[i].first);
+            
+            // Линейная интерполяция по каждому каналу (r, g, b)
+            uint8_t r = palette[i].second.r + t * (palette[i + 1].second.r - palette[i].second.r);
+            uint8_t g = palette[i].second.g + t * (palette[i + 1].second.g - palette[i].second.g);
+            uint8_t b = palette[i].second.b + t * (palette[i + 1].second.b - palette[i].second.b);
+            
+            return {r, g, b};
+        }
+    }
+
+    // Если `n` выходит за границы (0 или 255), вернем соответствующий крайний цвет
+    return n <= 0 ? palette.front().second : palette.back().second;
+}
+
 void Calc (BMPImage& bmpImage){
     uint32_t w = bmpImage.bmp.ih.Width;
     uint32_t h = bmpImage.bmp.ih.Height;
@@ -128,17 +182,21 @@ void Calc (BMPImage& bmpImage){
         for (uint32_t y = 0; y < h; y++){
             Complex c = toC(x, y, w, h);
             uint32_t n = M(c);
-            RGB color = {
-                static_cast<uint8_t>(n * 4), 
-                static_cast<uint8_t>(n * 8), 
-                static_cast<uint8_t>(n * 16)
-            };
+            RGB color = GetPaletteColor(n*10);
+            bmpImage.SetPixel(x, y, color);
+
+            // RGB color = {
+            //     static_cast<uint8_t>(n * 15), 
+            //     static_cast<uint8_t>(n * 15), 
+            //     static_cast<uint8_t>(n * 15)
+            // };
             // RGB color;
             // color.r = color.b = color.b = n * 15;
             bmpImage.SetPixel(x, y, color);
         }
     }
 }
+
 
 
 int main(){
@@ -168,7 +226,7 @@ int main(){
 
     BMPImage bmpimageOld;
     
-    std::fstream file("C:\\Users\\suren\\.vscode\\C++ OOP\\filicheck.bmp", std::ios::binary | std::ios::in);
+    std::fstream file("C:\\Users\\suren\\.vscode\\C++ OOP\\Complex\\filicheck.bmp", std::ios::binary | std::ios::in);
     if (!file.is_open()) {
         std::cerr << "Error: could not open file." << std::endl;
         return 1;
@@ -177,20 +235,20 @@ int main(){
     file.close();
     // Сохраняем изменения в новый файл
     Calc(bmpimageOld);
-    std::ofstream outfileOld("C:\\Users\\suren\\.vscode\\C++ OOP\\outputCalcOld.bmp", std::ios::binary);
+    std::ofstream outfileOld("C:\\Users\\suren\\.vscode\\C++ OOP\\Complex\\outputCalcOld.bmp", std::ios::binary);
     bmpimageOld.write(outfileOld);
     outfileOld.close();
 
 
 
-    // Создаем изображение размером 800x600
-    BMPImage bmpimage(1301, 900);
+    // Создаем изображение
+    BMPImage bmpimage(1200, 900);
 
     // Вычисляем фрактал и заполняем изображение
     Calc(bmpimage);
 
     // Сохраняем результат в файл
-    std::ofstream outfile("C:\\Users\\suren\\.vscode\\C++ OOP\\outputCalc.bmp", std::ios::binary);
+    std::ofstream outfile("C:\\Users\\suren\\.vscode\\C++ OOP\\Complex\\outputCalc.bmp", std::ios::binary);
     if (!outfile) {
         std::cerr << "Error: could not open file for writing." << std::endl;
         return 1;
